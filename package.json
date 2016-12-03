@@ -1,0 +1,14 @@
+{
+  "name": "jostore",
+  "version": "0.0.1",
+  "description": "JavaScript Object Storage",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Florin Ardelian <f.ardelian@gmail.com>",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "mkdirp": "^0.5.1"
+  }
+}
