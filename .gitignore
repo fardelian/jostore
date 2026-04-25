@@ -1,2 +1,5 @@
-node_modules
-examples/example-data-dir
+node_modules/
+.*/
+dist/
+
+src/examples/example-data-dir/
