@@ -1,5 +1,5 @@
 import * as path from 'path';
-import jostore from '../index';
+import jostore from '../lib/jostore';
 
 const storePath = path.resolve(__dirname, 'example-data-dir');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

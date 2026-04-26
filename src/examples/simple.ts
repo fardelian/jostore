@@ -1,5 +1,5 @@
 import * as path from 'path';
-import jostore, { JostoreRoot } from '../index';
+import jostore, { JostoreRoot } from '../lib/jostore';
 
 interface SimpleSchema extends JostoreRoot {
     counter?: number;

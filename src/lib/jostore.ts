@@ -38,6 +38,19 @@ const storeDirMap: Record<string, Store | undefined> = {};
 const objCacheByKey: Record<number, unknown> = {};
 const proxyObjMap = new WeakMap<object, ProxyTarget>();
 
+// Single shared exit listener so each Store doesn't add its own (which would
+// hit Node's MaxListeners warning after ~10 stores).
+const openStores = new Set<Store>();
+
+/** Module-level exit cleanup, exported so tests can drive it directly. */
+export function _runAllExitCleanups(code: number): void {
+    for (const store of openStores) {
+        store._runExitCleanup(code);
+    }
+    openStores.clear();
+}
+process.on('exit', _runAllExitCleanups);
+
 const emptyArr: unknown[] = [];
 const emptyObj: Record<string, unknown> = {};
 
@@ -52,26 +65,13 @@ function isVersionsBlock(value: StoredBlock): value is VersionsBlock {
 class Store {
     _opsCounter = 0;
     t0 = Date.now();
-    rawFd: number | undefined;
+    rawFd!: number;
     storeDirectory: string;
     versionFilePath: string;
     version: number;
     root: object;
 
     constructor(storeDirectory: string, version: number | null) {
-        process.on('exit', (code: number) => {
-            try {
-                if (this.rawFd !== undefined) {
-                    fs.fsyncSync(this.rawFd);
-                    fs.closeSync(this.rawFd);
-                }
-                const ms = Date.now() - this.t0;
-                console.error(`${code} ${code ? 'ERROR' : 'OK'}, after ${this._opsCounter} ops in ${ms} ms (~ ${Math.round(this._opsCounter / ms * 1000 * 1e2) / 1e2} ops/sec, ${Math.round(ms / this._opsCounter * 1e2) / 1e2} ms/op) @ ${this._nextBlock()}`);
-            } catch (ex) {
-                console.error(ex);
-            }
-        });
-
         this.storeDirectory = storeDirectory;
         this.versionFilePath = path.resolve(storeDirectory, 'version');
         this._openDataFile();
@@ -93,6 +93,18 @@ class Store {
         }
 
         this.root = this._rootFromData(rootData);
+        openStores.add(this);
+    }
+
+    _runExitCleanup(code: number): void {
+        try {
+            fs.fsyncSync(this.rawFd);
+            fs.closeSync(this.rawFd);
+            const ms = Date.now() - this.t0;
+            console.error(`${code} ${code ? 'ERROR' : 'OK'}, after ${this._opsCounter} ops in ${ms} ms (~ ${Math.round(this._opsCounter / ms * 1000 * 1e2) / 1e2} ops/sec, ${Math.round(ms / this._opsCounter * 1e2) / 1e2} ms/op) @ ${this._nextBlock()}`);
+        } catch (ex) {
+            console.error(ex);
+        }
     }
 
     read(key: number, version: number): BlockData | undefined {
@@ -126,22 +138,13 @@ class Store {
 
         this.writeDataBlock(nextVersionIndex, value);
 
-        let versions: VersionsBlock;
-        try {
-            const existing = this.readDataBlock(key);
-            versions = existing && isVersionsBlock(existing) ? existing : [];
-        } catch {
-            versions = [];
-        }
+        const existing = this.readDataBlock(key);
+        const versions: VersionsBlock = existing && isVersionsBlock(existing) ? existing : [];
         versions.push(nextVersionIndex);
         this.writeDataBlock(key, versions);
     }
 
     readDataBlock(blockIndex: number): StoredBlock | undefined {
-        if (this.rawFd === undefined) {
-            throw new Error('Data file is not open');
-        }
-
         const position = blockIndex * DATA_BLOCK_SIZE_BYTES;
 
         const buffer = Buffer.alloc(DATA_BLOCK_SIZE_BYTES);
@@ -163,10 +166,6 @@ class Store {
     }
 
     writeDataBlock(blockIndex: number, data: StoredBlock): void {
-        if (this.rawFd === undefined) {
-            throw new Error('Data file is not open');
-        }
-
         let json = JSON.stringify({ data });
         while (json.length < DATA_BLOCK_SIZE_BYTES) {
             json = `${json} `;
@@ -435,6 +434,23 @@ function jostore<T extends object = JostoreRoot>(
 
 export function getStore(proxy: object): Store | undefined {
     return proxyObjMap.get(proxy)?.store;
+}
+
+/**
+ * Test-only: drop the in-process caches so the next `jostore(dir)` call
+ * re-reads the directory from the underlying fs instead of returning the
+ * cached proxy. Used by acceptance tests to simulate a process restart
+ * while the on-disk state is preserved by the mocked fs.
+ */
+export function _resetCaches(): void {
+    for (const key of Object.keys(storeDirMap)) {
+        Reflect.deleteProperty(storeDirMap, key);
+    }
+    for (const key of Object.keys(objCacheByKey)) {
+        Reflect.deleteProperty(objCacheByKey, key);
+    }
+    openStores.clear();
+    // proxyObjMap is a WeakMap; entries are released when their proxies are.
 }
 
 export default jostore;

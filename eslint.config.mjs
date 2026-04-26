@@ -72,6 +72,15 @@ export default tseslint.config(
         },
     },
 
+    // Tests legitimately exercise the dynamic Proxy API where the proxy's
+    // type is fundamentally `any` — turn off the gatekeeper there too.
+    {
+        files: ['**/*.test.ts', 'src/mocks/**/*.ts'],
+        rules: {
+            '@typescript-eslint/no-explicit-any': 'off',
+        },
+    },
+
     // jest.config.js is CommonJS; tell ESLint about its globals and disable
     // type-aware rules (it isn't part of the TS project).
     {

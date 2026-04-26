@@ -30,11 +30,7 @@ module.exports = {
     coverageDirectory: '.coverage',
     coverageReporters: ['html', 'text', 'text-summary', 'lcov', 'json', 'json-summary'],
     collectCoverageFrom: [
-        'src/**/*.ts',
-        '!src/**/*.test.ts',
-        '!src/examples/**',
-        // src/index.ts is currently a demo (mirrors how kv-fs treats
-        // src/examples/*); it'll graduate to acceptance-tested code later.
-        '!src/index.ts',
+        'src/lib/**/*.ts',
+        '!src/lib/**/*.test.ts',
     ],
 };

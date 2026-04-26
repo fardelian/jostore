@@ -9,12 +9,14 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:acceptance": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testPathPatterns=acceptance",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "start-simple": "tsx src/examples/simple.ts",
     "start-complex": "tsx src/examples/complex.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@faker-js/faker": "10.4.0",
     "@stylistic/eslint-plugin": "5.10.0",
     "@types/jest": "30.0.0",
     "@types/node": "25.6.0",
