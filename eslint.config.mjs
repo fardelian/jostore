@@ -55,6 +55,20 @@ export default tseslint.config(
             // current function on the stack trace and inside the right
             // try/catch frame.
             '@typescript-eslint/return-await': ['error', 'always'],
+
+            // `no-explicit-any` stays on as the gatekeeper: introducing
+            // `any` requires an explicit per-line opt-out comment. But once
+            // a value is `any` (because the dev consciously chose it),
+            // operations downstream on that value should just work — so the
+            // unsafe-value-flow rules are off globally. This matches the
+            // pattern of dynamic Proxy-based APIs (e.g. jostore's root
+            // object) where every property access is intrinsically unsafe.
+            '@typescript-eslint/no-unsafe-assignment': 'off',
+            '@typescript-eslint/no-unsafe-member-access': 'off',
+            '@typescript-eslint/no-unsafe-call': 'off',
+            '@typescript-eslint/no-unsafe-argument': 'off',
+            '@typescript-eslint/no-unsafe-return': 'off',
+            '@typescript-eslint/restrict-plus-operands': ['error', { allowAny: true }],
         },
     },
 

@@ -2,6 +2,10 @@
 module.exports = {
     testEnvironment: 'node',
     testMatch: ['<rootDir>/src/**/*.test.ts'],
+    // Spawned-task worktrees under .claude/ contain copies of package.json
+    // and src files; keep Jest's haste-map and resolver out of them.
+    modulePathIgnorePatterns: ['<rootDir>/.claude/'],
+    testPathIgnorePatterns: ['/node_modules/', '<rootDir>/.claude/'],
     extensionsToTreatAsEsm: ['.ts'],
     transform: {
         '^.+\\.ts$': ['ts-jest', {
@@ -29,5 +33,8 @@ module.exports = {
         'src/**/*.ts',
         '!src/**/*.test.ts',
         '!src/examples/**',
+        // src/index.ts is currently a demo (mirrors how kv-fs treats
+        // src/examples/*); it'll graduate to acceptance-tested code later.
+        '!src/index.ts',
     ],
 };

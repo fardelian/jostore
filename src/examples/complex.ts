@@ -1,23 +1,9 @@
 import * as path from 'path';
-import jostore, { JostoreRoot } from '../index';
-
-interface SubObject {
-    counter2?: number;
-    recursive?: SubObject;
-}
-
-interface ComplexSchema extends JostoreRoot {
-    deep?: { nested: { structure: number } };
-    counter?: number;
-    subObject?: SubObject;
-    list?: number[];
-    boolean?: boolean;
-    null?: null;
-    someObjectToDelete?: { someKey: boolean };
-}
+import jostore from '../index';
 
 const storePath = path.resolve(__dirname, 'example-data-dir');
-const root = jostore<ComplexSchema>(storePath);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const root = jostore<any>(storePath);
 
 const COUNT = 10;
 for (let i = 0; i < COUNT; i++) {
