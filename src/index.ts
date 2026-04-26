@@ -399,9 +399,16 @@ const ProxyHandler: ProxyHandler<ProxyTarget> = {
         if (!originalDescriptor) {
             return undefined;
         }
-        return Object.assign(originalDescriptor, {
+        // Force configurable/writable: the proxy target is a ProxyTarget that
+        // doesn't carry these properties, so reporting them as non-configurable
+        // (e.g. an array's `length`) violates the Proxy invariant and crashes
+        // `Object.keys`. `enumerable` is preserved so it still skips `length`.
+        return {
             value: ProxyHandler.get?.(obj, name, obj.proxy ?? obj) as unknown,
-        });
+            writable: true,
+            enumerable: originalDescriptor.enumerable,
+            configurable: true,
+        };
     },
 };
 
