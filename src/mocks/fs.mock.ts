@@ -22,14 +22,14 @@ export class MockFs {
     /**
      * Test hook: if set, the next call to `readFileSync` consumes this error
      * and throws it instead of running normally. Lets tests cover the
-     * non-ENOENT branch in `_readKey` without monkey-patching the mock.
+     * non-ENOENT branch in `_readNode` without monkey-patching the mock.
      */
     nextReadFileSyncError: NodeJS.ErrnoException | null = null;
 
     /**
      * Test hook: if set, the next call to `writeFileSync` throws this error.
      * Used to exercise `_runExitCleanup`'s catch block (which still has a
-     * disk-touching `_nextBlock` call inside its template string).
+     * disk-touching `_nextNode` call inside its template string).
      */
     nextWriteFileSyncError: Error | null = null;
 

@@ -311,7 +311,7 @@ describe('jostore (acceptance)', () => {
             const store = getStore(root);
             expect(store).toBeDefined();
 
-            // _runExitCleanup still calls _nextBlock, which writes the version
+            // _runExitCleanup still calls _nextNode, which writes the version
             // file. A failing writeFileSync exercises the outer catch.
             mockFs.nextWriteFileSyncError = new Error('boom');
             const errSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -331,8 +331,8 @@ describe('jostore (acceptance)', () => {
             const err = new Error('EACCES') as NodeJS.ErrnoException;
             err.code = 'EACCES';
             mockFs.nextReadFileSyncError = err;
-            // Pass an explicit version to skip _nextBlock's version-file read
-            // (which silently swallows all errors). The next read is _readKey(0)
+            // Pass an explicit version to skip _nextNode's version-file read
+            // (which silently swallows all errors). The next read is _readNode(0)
             // — its catch only swallows ENOENT, so EACCES propagates.
             expect(() => jostore<any>(uniqueDir(), 1)).toThrow(/EACCES/);
         });
@@ -340,28 +340,28 @@ describe('jostore (acceptance)', () => {
 
     describe('defensive read paths', () => {
         it('returns undefined when asked for a version older than every stored entry', () => {
-            // Block 0's version list always contains entries from construction,
+            // Node 0's version list always contains entries from construction,
             // each ≥ 1. Reading at version 0 falls off the end of the loop.
             const root = jostore<any>(uniqueDir());
             const store = getStore(root);
             expect(store?.read(0, 0)).toBeUndefined();
         });
 
-        it('returns undefined when a version pointer leads to a missing block', () => {
+        it('returns undefined when a version pointer leads to a missing node', () => {
             const dir = uniqueDir();
             const root = jostore<any>(dir);
             const store = getStore(root);
-            // Overwrite block 0's version list to point at a block that
-            // was never written (forces _readKey to return undefined inside
+            // Overwrite node 0's version list to point at a node that
+            // was never written (forces _readNode to return undefined inside
             // read() after correctVersion is set).
             mockFs.files.set(`${dir}/0000`, Buffer.from('[999]'));
             expect(store?.read(0, 9999)).toBeUndefined();
         });
 
-        it('returns undefined from the get trap when a property points at a missing block', () => {
+        it('returns undefined from the get trap when a property points at a missing node', () => {
             const dir = uniqueDir();
             // Hand-craft a store on disk where root's `foo` points at a key
-            // that doesn't exist. Opening with version=1 skips _nextBlock so
+            // that doesn't exist. Opening with version=1 skips _nextNode so
             // the version counter stays at 1 and the rootData read picks up
             // our crafted snapshot.
             mockFs.files.set(`${dir}/version`, Buffer.from('1'));

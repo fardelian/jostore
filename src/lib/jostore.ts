@@ -3,30 +3,30 @@ import * as fs from 'fs';
 
 type ScalarType = 'number' | 'boolean' | 'string' | 'undefined';
 
-interface ScalarBlock {
+interface ScalarNode {
     type: ScalarType;
     value: number | boolean | string | undefined;
 }
 
-interface ObjectBlock {
+interface ObjectNode {
     type: 'object';
     properties: Record<string, number | null>;
 }
 
-interface ArrayBlock {
+interface ArrayNode {
     type: 'array';
     properties: (number | null)[];
 }
 
-type CompoundBlock = ObjectBlock | ArrayBlock;
-type BlockData = ScalarBlock | CompoundBlock;
-type VersionsBlock = number[];
-type StoredBlock = BlockData | VersionsBlock;
+type CompoundNode = ObjectNode | ArrayNode;
+type DataNode = ScalarNode | CompoundNode;
+type VersionsNode = number[];
+type StoredNode = DataNode | VersionsNode;
 
 interface ProxyTarget {
     key: number;
     store: Store;
-    data: CompoundBlock;
+    data: CompoundNode;
     proxy?: object;
 }
 
@@ -56,7 +56,7 @@ function hasOwn(obj: object, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-function isVersionsBlock(value: StoredBlock): value is VersionsBlock {
+function isVersionsNode(value: StoredNode): value is VersionsNode {
     return Array.isArray(value);
 }
 
@@ -73,10 +73,10 @@ class Store {
         this.versionFilePath = path.resolve(storeDirectory, 'version');
         fs.mkdirSync(this.storeDirectory, { recursive: true });
 
-        this.version = (version ?? 0) || this._nextBlock();
+        this.version = (version ?? 0) || this._nextNode();
 
         const initial = this.read(0, this.version);
-        let rootData: CompoundBlock;
+        let rootData: CompoundNode;
         if (initial && (initial.type === 'object' || initial.type === 'array')) {
             rootData = initial;
         } else {
@@ -94,19 +94,19 @@ class Store {
     }
 
     _runExitCleanup(code: number): void {
-        // `_nextBlock` still touches the version file, so a shutdown-time fs
+        // `_nextNode` still touches the version file, so a shutdown-time fs
         // error remains possible even though we no longer keep an open fd.
         try {
             const ms = Date.now() - this.t0;
-            console.error(`${code} ${code ? 'ERROR' : 'OK'}, after ${this._opsCounter} ops in ${ms} ms (~ ${Math.round(this._opsCounter / ms * 1000 * 1e2) / 1e2} ops/sec, ${Math.round(ms / this._opsCounter * 1e2) / 1e2} ms/op) @ ${this._nextBlock()}`);
+            console.error(`${code} ${code ? 'ERROR' : 'OK'}, after ${this._opsCounter} ops in ${ms} ms (~ ${Math.round(this._opsCounter / ms * 1000 * 1e2) / 1e2} ops/sec, ${Math.round(ms / this._opsCounter * 1e2) / 1e2} ms/op) @ ${this._nextNode()}`);
         } catch (ex) {
             console.error(ex);
         }
     }
 
-    read(key: number, version: number): BlockData | undefined {
-        const existingVersions = this._readKey(key);
-        if (!existingVersions || !isVersionsBlock(existingVersions)) {
+    read(key: number, version: number): DataNode | undefined {
+        const existingVersions = this._readNode(key);
+        if (!existingVersions || !isVersionsNode(existingVersions)) {
             return undefined;
         }
 
@@ -123,22 +123,22 @@ class Store {
             return undefined;
         }
 
-        const result = this._readKey(correctVersion);
-        if (!result || isVersionsBlock(result)) {
+        const result = this._readNode(correctVersion);
+        if (!result || isVersionsNode(result)) {
             return undefined;
         }
         return result;
     }
 
-    write(key: number, value: BlockData): void {
-        const nextVersionIndex = this._nextBlock();
+    write(key: number, value: DataNode): void {
+        const nextVersionIndex = this._nextNode();
 
-        this._writeKey(nextVersionIndex, value);
+        this._writeNode(nextVersionIndex, value);
 
-        const existing = this._readKey(key);
-        const versions: VersionsBlock = existing && isVersionsBlock(existing) ? existing : [];
+        const existing = this._readNode(key);
+        const versions: VersionsNode = existing && isVersionsNode(existing) ? existing : [];
         versions.push(nextVersionIndex);
-        this._writeKey(key, versions);
+        this._writeNode(key, versions);
     }
 
     /**
@@ -146,30 +146,30 @@ class Store {
      * with zeros to at least 4 digits (so a fresh store sorts naturally in
      * `ls`); larger keys simply use more digits.
      */
-    _keyFilePath(key: number): string {
+    _nodeFilePath(key: number): string {
         return path.resolve(this.storeDirectory, String(key).padStart(4, '0'));
     }
 
     /** Read and parse a key's JSON file; returns `undefined` if it doesn't exist. */
-    _readKey(key: number): StoredBlock | undefined {
+    _readNode(key: number): StoredNode | undefined {
         let json: string;
         try {
-            json = fs.readFileSync(this._keyFilePath(key), 'utf8');
+            json = fs.readFileSync(this._nodeFilePath(key), 'utf8');
         } catch (ex) {
             if ((ex as NodeJS.ErrnoException).code !== 'ENOENT') {
                 throw ex;
             }
             return undefined;
         }
-        return JSON.parse(json) as StoredBlock;
+        return JSON.parse(json) as StoredNode;
     }
 
     /** Write `value` as pretty-printed JSON for `key` so the file is browsable. */
-    _writeKey(key: number, value: StoredBlock): void {
-        fs.writeFileSync(this._keyFilePath(key), JSON.stringify(value, null, 2));
+    _writeNode(key: number, value: StoredNode): void {
+        fs.writeFileSync(this._nodeFilePath(key), JSON.stringify(value, null, 2));
     }
 
-    _rootFromData(rootData: CompoundBlock): object {
+    _rootFromData(rootData: CompoundNode): object {
         const obj: ProxyTarget = {
             key: 0,
             store: this,
@@ -186,7 +186,7 @@ class Store {
         return root;
     }
 
-    _nextBlock(): number {
+    _nextNode(): number {
         let lastId: number;
         try {
             lastId = Number(fs.readFileSync(this.versionFilePath).toString()) | 0;
@@ -289,10 +289,10 @@ const ProxyHandler: ProxyHandler<ProxyTarget> = {
             return true;
         }
 
-        const propKey = obj.store._nextBlock();
+        const propKey = obj.store._nextNode();
 
         const type = typeof value;
-        let data: BlockData;
+        let data: DataNode;
         switch (type) {
             case 'number':
             case 'boolean':
