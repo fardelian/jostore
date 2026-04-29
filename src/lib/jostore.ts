@@ -1,8 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
 
-const DATA_BLOCK_SIZE_BYTES = 1000;
-
 type ScalarType = 'number' | 'boolean' | 'string' | 'undefined';
 
 interface ScalarBlock {
@@ -65,7 +63,6 @@ function isVersionsBlock(value: StoredBlock): value is VersionsBlock {
 class Store {
     _opsCounter = 0;
     t0 = Date.now();
-    rawFd!: number;
     storeDirectory: string;
     versionFilePath: string;
     version: number;
@@ -74,7 +71,7 @@ class Store {
     constructor(storeDirectory: string, version: number | null) {
         this.storeDirectory = storeDirectory;
         this.versionFilePath = path.resolve(storeDirectory, 'version');
-        this._openDataFile();
+        fs.mkdirSync(this.storeDirectory, { recursive: true });
 
         this.version = (version ?? 0) || this._nextBlock();
 
@@ -97,9 +94,9 @@ class Store {
     }
 
     _runExitCleanup(code: number): void {
+        // `_nextBlock` still touches the version file, so a shutdown-time fs
+        // error remains possible even though we no longer keep an open fd.
         try {
-            fs.fsyncSync(this.rawFd);
-            fs.closeSync(this.rawFd);
             const ms = Date.now() - this.t0;
             console.error(`${code} ${code ? 'ERROR' : 'OK'}, after ${this._opsCounter} ops in ${ms} ms (~ ${Math.round(this._opsCounter / ms * 1000 * 1e2) / 1e2} ops/sec, ${Math.round(ms / this._opsCounter * 1e2) / 1e2} ms/op) @ ${this._nextBlock()}`);
         } catch (ex) {
@@ -108,7 +105,7 @@ class Store {
     }
 
     read(key: number, version: number): BlockData | undefined {
-        const existingVersions = this.readDataBlock(key);
+        const existingVersions = this._readKey(key);
         if (!existingVersions || !isVersionsBlock(existingVersions)) {
             return undefined;
         }
@@ -126,7 +123,7 @@ class Store {
             return undefined;
         }
 
-        const result = this.readDataBlock(correctVersion);
+        const result = this._readKey(correctVersion);
         if (!result || isVersionsBlock(result)) {
             return undefined;
         }
@@ -136,64 +133,40 @@ class Store {
     write(key: number, value: BlockData): void {
         const nextVersionIndex = this._nextBlock();
 
-        this.writeDataBlock(nextVersionIndex, value);
+        this._writeKey(nextVersionIndex, value);
 
-        const existing = this.readDataBlock(key);
+        const existing = this._readKey(key);
         const versions: VersionsBlock = existing && isVersionsBlock(existing) ? existing : [];
         versions.push(nextVersionIndex);
-        this.writeDataBlock(key, versions);
+        this._writeKey(key, versions);
     }
 
-    readDataBlock(blockIndex: number): StoredBlock | undefined {
-        const position = blockIndex * DATA_BLOCK_SIZE_BYTES;
-
-        const buffer = Buffer.alloc(DATA_BLOCK_SIZE_BYTES);
-        const readBytes = fs.readSync(this.rawFd, buffer, 0, DATA_BLOCK_SIZE_BYTES, position);
-
-        if (readBytes !== DATA_BLOCK_SIZE_BYTES) {
-            return undefined;
-        }
-
-        // Padding/uninitialised regions of the data file are zero bytes; strip
-        // them before parsing so JSON.parse sees only the real payload.
-        // eslint-disable-next-line no-control-regex
-        const json = buffer.toString().replace(/\x00+/g, '');
-        if (!json) {
-            return undefined;
-        }
-        const parsed = JSON.parse(json) as { data: StoredBlock };
-        return parsed.data;
+    /**
+     * On-disk file path for a given key. The basename is the key left-padded
+     * with zeros to at least 4 digits (so a fresh store sorts naturally in
+     * `ls`); larger keys simply use more digits.
+     */
+    _keyFilePath(key: number): string {
+        return path.resolve(this.storeDirectory, String(key).padStart(4, '0'));
     }
 
-    writeDataBlock(blockIndex: number, data: StoredBlock): void {
-        let json = JSON.stringify({ data });
-        while (json.length < DATA_BLOCK_SIZE_BYTES) {
-            json = `${json} `;
-        }
-
-        const position = blockIndex * DATA_BLOCK_SIZE_BYTES;
-
-        let empty: string | undefined;
-        while (fs.statSync(path.resolve(this.storeDirectory, 'data')).size < position) {
-            empty ??= ' '.repeat(DATA_BLOCK_SIZE_BYTES);
-            fs.writeSync(this.rawFd, empty, position);
-        }
-
-        fs.writeSync(this.rawFd, json, position);
-    }
-
-    _openDataFile(): void {
-        fs.mkdirSync(this.storeDirectory, { recursive: true });
-
-        const rawFilePath = path.resolve(this.storeDirectory, 'data');
+    /** Read and parse a key's JSON file; returns `undefined` if it doesn't exist. */
+    _readKey(key: number): StoredBlock | undefined {
+        let json: string;
         try {
-            this.rawFd = fs.openSync(rawFilePath, 'r+');
+            json = fs.readFileSync(this._keyFilePath(key), 'utf8');
         } catch (ex) {
             if ((ex as NodeJS.ErrnoException).code !== 'ENOENT') {
                 throw ex;
             }
-            this.rawFd = fs.openSync(rawFilePath, 'w+');
+            return undefined;
         }
+        return JSON.parse(json) as StoredBlock;
+    }
+
+    /** Write `value` as pretty-printed JSON for `key` so the file is browsable. */
+    _writeKey(key: number, value: StoredBlock): void {
+        fs.writeFileSync(this._keyFilePath(key), JSON.stringify(value, null, 2));
     }
 
     _rootFromData(rootData: CompoundBlock): object {
